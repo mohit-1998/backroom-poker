@@ -1,0 +1,13 @@
+{
+  "name": "backroom-poker",
+  "version": "1.0.0",
+  "description": "Texas Hold'em for friends: private rooms, up to 8 players, bots, clay chips.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/engine.test.js && node test/e2e.test.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" },
+  "license": "MIT"
+}
