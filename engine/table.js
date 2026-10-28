@@ -2,6 +2,7 @@
 const { newDeck, shuffle, bestScore, handLabel, describe } = require('./cards');
 const { decide } = require('./bots');
 
+const fmt = (n) => Number(n).toLocaleString('en-US');
 const MAX = 8;
 const SEAT_ORDER = [0, 4, 2, 6, 1, 5, 3, 7]; // spread players around the table
 const BOT_NAMES = ['Vega', 'Orion', 'Nova', 'Atlas', 'Lyra', 'Rigel', 'Sirius', 'Cygnus', 'Altair', 'Deneb'];
@@ -13,6 +14,7 @@ class Table {
     this.bb = settings.bb || 20;
     this.actionTime = settings.actionTime || 30; // seconds
     this.speed = settings.speed === undefined ? 1 : settings.speed; // test hook: scales all delays
+    this.botDelay = settings.botDelay || [2200, 4200]; // how long a bot "thinks", in ms
     this.hooks = hooks;
 
     this.seats = new Array(MAX).fill(null);
@@ -65,7 +67,12 @@ class Table {
 
   changed() { if (this.hooks.onChange) this.hooks.onChange(); }
   emit(k, data) { if (this.hooks.onEvent) this.hooks.onEvent(Object.assign({ k }, data || {})); }
-  logAdd(s) { this.log.push(s); if (this.log.length > 60) this.log.shift(); }
+  // Log entries are small objects so the client can render them nicely:
+  // { k: kind, t: text, seat, n: name, a: action, cards, h: hand number }
+  logAdd(t, k = 'sys', extra = {}) {
+    this.log.push(Object.assign({ k, t, h: this.handNo }, extra));
+    if (this.log.length > 160) this.log.shift();
+  }
 
   // ---------- helpers ----------
   handRunning() { return this.street === 'preflop' || this.street === 'flop' || this.street === 'turn' || this.street === 'river'; }
@@ -254,7 +261,11 @@ class Table {
     for (const p of players) p.hole = [this.deck.pop(), this.deck.pop()];
 
     this.street = 'preflop';
-    this.logAdd(`— Hand #${this.handNo} · ${this.seats[this.dealer].name} has the button —`);
+    this.logAdd(`Hand #${this.handNo} · ${this.seats[this.dealer].name} has the button`, 'hand');
+    for (const [i, label] of [[sb, 'small'], [bb, 'big']]) {
+      const q = this.seats[i];
+      this.logAdd(`posts ${label} blind ${fmt(q.bet)}`, 'act', { seat: i, n: q.name, a: 'blind' });
+    }
     this.emit('deal', {});
     this.toAct = bb;
     this.progress();
@@ -264,7 +275,15 @@ class Table {
     const alive = this.alive();
     if (alive.length <= 1) { this.finishUncontested(alive[0]); return; }
     const need = alive.filter((p) => !p.allIn && (!p.acted || p.bet < this.currentBet));
-    if (need.length === 0) { this.endStreet(); return; }
+    if (need.length === 0) {
+      // betting is over: a short beat so players can see the last action before the next card
+      if (!this.runTimer) {
+        this.toAct = -1;
+        this.changed();
+        this.runTimer = this.later(() => { this.runTimer = null; this.endStreet(); }, 1100);
+      }
+      return;
+    }
     this.toAct = this.nextSeat(this.toAct, (p) => need.includes(p));
     this.startTurn();
   }
@@ -276,7 +295,8 @@ class Table {
     this.turnId++;
     if (p.bot) {
       this.deadline = 0;
-      this.turnTimer = this.later(() => this.botAct(seat), 700 + Math.random() * 1300);
+      const [lo, hi] = this.botDelay;
+      this.turnTimer = this.later(() => this.botAct(seat), lo + Math.random() * (hi - lo));
     } else {
       this.deadline = Date.now() + this.actionTime * 1000;
       this.turnTimer = this.later(() => this.timeout(seat), this.actionTime * 1000);
@@ -332,16 +352,16 @@ class Table {
     if (type === 'fold') {
       p.folded = true;
       p.lastAction = 'Fold';
-      this.logAdd(`${p.name} folds`);
+      this.logAdd('folds', 'act', { seat, n: p.name, a: 'fold' });
       this.emit('fold', { seat });
     } else if (type === 'check') {
       p.lastAction = 'Check';
-      this.logAdd(`${p.name} checks`);
+      this.logAdd('checks', 'act', { seat, n: p.name, a: 'check' });
       this.emit('check', { seat });
     } else if (type === 'call') {
       this.pay(p, lg.toCall);
       p.lastAction = p.allIn ? `All-in ${p.bet}` : `Call ${lg.toCall}`;
-      this.logAdd(`${p.name} calls ${lg.toCall}${p.allIn ? ' (all-in)' : ''}`);
+      this.logAdd(`calls ${fmt(lg.toCall)}${p.allIn ? ' · all-in' : ''}`, 'act', { seat, n: p.name, a: p.allIn ? 'allin' : 'call' });
       this.emit('chips', { seat, amount: lg.toCall });
     } else {
       let to = Math.floor(Number(amt));
@@ -359,7 +379,7 @@ class Table {
       }
       if (full) this.minRaise = size;
       p.lastAction = (prevCur === 0 ? `Bet ${to}` : `Raise to ${to}`) + (p.allIn ? ' (all-in)' : '');
-      this.logAdd(`${p.name} ${prevCur === 0 ? 'bets' : 'raises to'} ${to}${p.allIn ? ' (all-in)' : ''}`);
+      this.logAdd(`${prevCur === 0 ? 'bets' : 'raises to'} ${fmt(to)}${p.allIn ? ' · all-in' : ''}`, 'act', { seat, n: p.name, a: p.allIn ? 'allin' : 'raise' });
       this.emit('chips', { seat, amount: paid });
     }
     p.acted = true;
@@ -369,6 +389,7 @@ class Table {
   }
 
   endStreet() {
+    if (!this.handRunning()) return;
     for (const p of this.seats) if (p) p.bet = 0;
     this.currentBet = 0;
     this.minRaise = this.bb;
@@ -381,7 +402,7 @@ class Table {
     const n = next === 'flop' ? 3 : 1;
     const dealt = [];
     for (let i = 0; i < n; i++) { const c = this.deck.pop(); this.board.push(c); dealt.push(c); }
-    this.logAdd(`${next[0].toUpperCase() + next.slice(1)}: ${dealt.join(' ')}`);
+    this.logAdd(next[0].toUpperCase() + next.slice(1), 'street', { cards: this.board.slice() });
     this.emit(next, {});
     this.toAct = this.dealer;
 
@@ -390,7 +411,7 @@ class Table {
       this.allInReveal = true;
       this.toAct = -1;
       this.changed();
-      this.runTimer = this.later(() => this.endStreet(), 1600);
+      this.runTimer = this.later(() => { this.runTimer = null; this.endStreet(); }, 2400);
       return;
     }
     this.progress();
@@ -421,6 +442,9 @@ class Table {
       p.score = bestScore(p.hole.concat(this.board));
       p.handName = handLabel(p.score);
     }
+    if (alive.length > 1) {
+      for (const p of alive) this.logAdd(p.handName, 'show', { seat: p.seat, n: p.name, cards: p.hole.slice() });
+    }
     const potTotal = this.potTotal();
     const pots = this.buildPots();
     const won = new Map();
@@ -449,7 +473,7 @@ class Table {
       ? `${this.seats[headline.seat].name} wins ${headline.amount} with ${headline.hand}`
       : winners.map((w) => `${this.seats[w.seat].name} +${w.amount} (${w.hand})`).join(' · ');
     this.result = { showdown: true, winners, pots: resPots, pot: potTotal, text };
-    this.logAdd(text);
+    this.logAdd(text, 'win', { seat: headline ? headline.seat : -1 });
     this.emit('win', { seats: winners.map((w) => w.seat), amount: potTotal });
     this.finishHand();
   }
@@ -457,6 +481,7 @@ class Table {
   finishUncontested(p) {
     this.cancel(this.turnTimer);
     this.cancel(this.runTimer);
+    this.runTimer = null;
     this.street = 'showdown';
     this.toAct = -1;
     const pot = this.potTotal();
@@ -466,7 +491,7 @@ class Table {
       p.win = pot;
       p.handName = '';
       this.result = { showdown: false, winners: [{ seat: p.seat, amount: pot, hand: '' }], pots: [{ amount: pot, winners: [p.seat], hand: '' }], pot, text: `${p.name} wins ${pot}` };
-      this.logAdd(this.result.text);
+      this.logAdd(this.result.text, 'win', { seat: p.seat });
       this.emit('win', { seats: [p.seat], amount: pot });
     }
     this.finishHand();
@@ -476,7 +501,7 @@ class Table {
     for (const p of this.seats) if (p) p.bet = 0;
     this.changed();
     if (this.started) {
-      this.nextTimer = this.later(() => this.startHand(), 7000);
+      this.nextTimer = this.later(() => this.startHand(), 8000);
     }
   }
 
@@ -512,7 +537,7 @@ class Table {
       settings: { sb: this.sb, bb: this.bb, startChips: this.startChips, actionTime: this.actionTime },
       players, legal, myHand,
       result: this.result,
-      log: this.log.slice(-8)
+      log: this.log.slice(-90)
     };
   }
 }
