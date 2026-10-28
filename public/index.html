@@ -58,6 +58,13 @@
         </div>
       </div>
 
+      <span class="lbl">Bot speed</span>
+      <div class="presets" id="speeds">
+        <button data-speed="relaxed" class="on">Relaxed<small>2–4 s per move</small></button>
+        <button data-speed="normal">Normal<small>1–3 s</small></button>
+        <button data-speed="quick">Quick<small>under 1.5 s</small></button>
+      </div>
+
       <span class="lbl">Starting chips and blinds</span>
       <div class="presets" id="presets">
         <button data-chips="1000" data-bb="10">1,000<small>Blinds 5 / 10</small></button>
@@ -94,7 +101,13 @@
       <button id="handsBtn" class="icon" aria-label="Hand rankings" title="Hand rankings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
       </button>
-      <button id="soundBtn" class="icon" aria-label="Sound on" title="Sound">
+      <button id="logBtn" class="icon logbtn" aria-label="Action log" title="Action log">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 8h8M8 12h5"/></svg>
+      </button>
+      <button id="musicBtn" class="icon" aria-label="Music on" title="Background music">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/><path id="musicOff" d="M3 3l18 18" style="display:none"/></svg>
+      </button>
+      <button id="soundBtn" class="icon" aria-label="Sound effects on" title="Sound effects">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path id="sndOn" d="M16.5 8.5a5 5 0 0 1 0 7"/><path id="sndOff" d="M17 9l5 6M22 9l-5 6" style="display:none"/></svg>
       </button>
       <button id="leaveBtn" class="icon" aria-label="Leave table" title="Leave table">
@@ -105,6 +118,7 @@
 
   <div id="banner" class="banner" hidden></div>
 
+  <div class="layout">
   <main class="main">
     <div class="stages" id="stageTabs"></div>
     <div class="stage" id="stage">
@@ -120,10 +134,11 @@
     </div>
   </main>
 
-  <aside id="logPanel" class="panel log" aria-label="Table log">
-    <div class="p-title">Table log</div>
-    <div id="logLines"></div>
+  <aside id="logPanel" class="panel log" aria-label="Action log">
+    <div class="p-title">Action log <button id="logClose" class="x logx" aria-label="Close log">×</button></div>
+    <div id="logLines" role="log" aria-live="off"></div>
   </aside>
+  </div>
 
   <aside id="handsPanel" class="panel hands" hidden aria-label="Hand rankings">
     <div class="p-title">What beats what <button id="handsClose" class="x" aria-label="Close">×</button></div>
@@ -136,6 +151,7 @@
   <div id="toast" class="toast" hidden></div>
 </section>
 
+<script src="sound.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

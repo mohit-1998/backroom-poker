@@ -80,98 +80,14 @@
     }).join('');
   }
 
-  // ---------------------------------------------------------------- sound
-  const sfx = {
-    on: store.get('bp_sound') !== '0',
-    ctx: null,
-    get() {
-      if (!this.on) return null;
-      try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!this.ctx) this.ctx = new AC();
-        if (this.ctx.state === 'suspended') this.ctx.resume();
-        return this.ctx;
-      } catch (e) { return null; }
-    },
-    noise(ctx, t, len, freq, q, gain) {
-      const n = Math.floor(ctx.sampleRate * len);
-      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let j = 0; j < n; j++) d[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / n, 3);
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
-      const g = ctx.createGain(); g.gain.value = gain;
-      src.connect(bp); bp.connect(g); g.connect(ctx.destination);
-      src.start(t);
-    },
-    tone(ctx, t, f0, f1, dur, gain, type) {
-      const o = ctx.createOscillator();
-      o.type = type || 'sine';
-      o.frequency.setValueAtTime(f0, t);
-      if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.6);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(gain, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + dur + 0.02);
-    },
-    // clay chips: a dry high click plus a low "thock", several in quick succession
-    chips(count) {
-      const ctx = this.get(); if (!ctx) return;
-      let t = ctx.currentTime + 0.01;
-      for (let i = 0; i < count; i++) {
-        this.noise(ctx, t, 0.06, 2200 + Math.random() * 1300, 1.3, 0.8);
-        this.tone(ctx, t, 260 + Math.random() * 70, 110, 0.08, 0.5);
-        t += 0.045 + Math.random() * 0.06;
-      }
-    },
-    deal() {
-      const ctx = this.get(); if (!ctx) return;
-      const t = ctx.currentTime + 0.01;
-      this.noise(ctx, t, 0.05, 5200, 0.9, 0.35);
-      this.noise(ctx, t + 0.12, 0.05, 4600, 0.9, 0.3);
-    },
-    flop(n) {
-      const ctx = this.get(); if (!ctx) return;
-      const t = ctx.currentTime + 0.01;
-      for (let i = 0; i < n; i++) this.noise(ctx, t + i * 0.13, 0.05, 4800 + i * 300, 0.9, 0.35);
-    },
-    check() {
-      const ctx = this.get(); if (!ctx) return;
-      const t = ctx.currentTime + 0.01;
-      this.tone(ctx, t, 190, 120, 0.07, 0.55);
-      this.noise(ctx, t, 0.03, 1400, 1, 0.3);
-    },
-    fold() {
-      const ctx = this.get(); if (!ctx) return;
-      this.noise(ctx, ctx.currentTime + 0.01, 0.12, 3200, 0.7, 0.22);
-    },
-    ding() {
-      const ctx = this.get(); if (!ctx) return;
-      const t = ctx.currentTime + 0.01;
-      this.tone(ctx, t, 880, 880, 0.35, 0.16, 'triangle');
-      this.tone(ctx, t + 0.09, 1320, 1320, 0.4, 0.11, 'triangle');
-    },
-    win(mine) {
-      const ctx = this.get(); if (!ctx) return;
-      const t = ctx.currentTime + 0.05;
-      this.chips(mine ? 9 : 5);
-      if (mine) { [523, 659, 784, 1047].forEach((f, i) => this.tone(ctx, t + 0.25 + i * 0.1, f, f, 0.5, 0.12, 'triangle')); }
-    },
-    toggle() {
-      this.on = !this.on;
-      store.set('bp_sound', this.on ? '1' : '0');
-      renderSoundBtn();
-      if (this.on) this.chips(2);
-    }
-  };
-
+  // ---------------------------------------------------------------- sound (see sound.js)
+  const sfx = window.Snd;
   function renderSoundBtn() {
-    $('#sndOn').style.display = sfx.on ? '' : 'none';
-    $('#sndOff').style.display = sfx.on ? 'none' : '';
-    $('#soundBtn').setAttribute('aria-label', sfx.on ? 'Sound on' : 'Sound off');
+    $('#sndOn').style.display = sfx.sfxOn ? '' : 'none';
+    $('#sndOff').style.display = sfx.sfxOn ? 'none' : '';
+    $('#soundBtn').setAttribute('aria-label', sfx.sfxOn ? 'Sound effects on' : 'Sound effects off');
+    $('#musicOff').style.display = sfx.musicOn ? 'none' : '';
+    $('#musicBtn').setAttribute('aria-label', sfx.musicOn ? 'Music on' : 'Music off');
   }
 
   // ---------------------------------------------------------------- connection
@@ -181,6 +97,7 @@
   let retry = 0;
   let pingIv = null;
   let state = null;
+  let stateAt = 0;
 
   function connect() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
@@ -233,6 +150,7 @@
         break;
       case 'state':
         state = m;
+        stateAt = performance.now();
         render();
         break;
       case 'ev':
@@ -258,8 +176,15 @@
 
   // ---------------------------------------------------------------- lobby
   const lobby = {
-    bots: 3, chips: 2000, bb: 20,
+    bots: 3, chips: 2000, bb: 20, speed: 'relaxed',
     init() {
+      document.querySelectorAll('#speeds button').forEach((b) => {
+        b.onclick = () => {
+          document.querySelectorAll('#speeds button').forEach((x) => x.classList.remove('on'));
+          b.classList.add('on');
+          this.speed = b.dataset.speed;
+        };
+      });
       $('#name').value = store.get('bp_name') || '';
       const q = new URLSearchParams(location.search).get('room');
       if (q) $('#code').value = q.toUpperCase().slice(0, 4);
@@ -279,7 +204,7 @@
       $('#createBtn').onclick = () => {
         const name = this.name(); if (!name) return;
         lobbyError('');
-        pending = { t: 'create', name, token, bots: this.bots, startChips: this.chips, bb: this.bb, actionTime: 30 };
+        pending = { t: 'create', name, token, bots: this.bots, startChips: this.chips, bb: this.bb, actionTime: 30, botSpeed: this.speed };
         store.del('bp_room');
         connect(); if (ws && ws.readyState === 1) { const p = pending; pending = null; send(p); }
       };
@@ -309,10 +234,14 @@
     $('#lobby').hidden = true;
     $('#game').hidden = false;
     renderSoundBtn();
+    sfx.setInGame(true);
   }
 
   function leaveToLobby() {
     inGame = false; state = null; pending = null;
+    sfx.setInGame(false);
+    logSig = '';
+    $('#logPanel').classList.remove('open');
     $('#game').hidden = true;
     $('#lobby').hidden = false;
     $('#banner').hidden = true;
@@ -448,12 +377,13 @@
       else if (!p.connected) status = 'Disconnected';
       else if (p.allIn && running) status = 'All-in';
       else if (p.last && running) status = p.last;
+      const sk = /^Fold/.test(status) ? ' s-fold' : /^Check/.test(status) ? ' s-check' : /^Call/.test(status) ? ' s-call' : /^(Bet|Raise)/.test(status) ? ' s-raise' : /All-in/.test(status) ? ' s-allin' : '';
       const remove = s.host && p.bot ? '<button class="x-btn" data-rm="' + i + '" aria-label="Remove bot ' + esc(p.name) + '">×</button>' : '';
       const stackSize = me ? { w: 22, h: 3.6, maxPer: 8, maxStacks: 4, first: 12 } : { w: 18, h: 3.2, maxPer: 8, maxStacks: 3, first: 12 };
       seatsH += '<div class="seat ' + cls.slice(5) + '" style="' + base + '">' + holes + dealerBadge + blindBadge + remove +
         '<div class="plate"><div class="av" style="background:' + COLORS[i % 8] + '">' + initials + '</div>' +
         '<div class="nm"><span class="n">' + esc(p.name) + (p.bot ? '<span class="tag">BOT</span>' : '') + '</span><span class="c">' + fmt(p.chips) + '</span></div>' + tbar + '</div>' +
-        '<div class="status' + sc + '">' + esc(status) + '</div>' +
+        '<div class="status' + sc + sk + '">' + esc(status) + '</div>' +
         '<div class="stk">' + stackHtml(p.chips, stackSize) + '</div></div>';
 
       if (p.bet > 0) {
@@ -574,8 +504,37 @@
     return 9;
   }
 
+  function miniCard(c) {
+    const r = c[0] === 'T' ? '10' : c[0];
+    const red = c[1] === 'h' || c[1] === 'd';
+    return '<span class="mc' + (red ? ' red' : '') + '">' + r + SUIT[c[1]] + '</span>';
+  }
+
+  let logSig = '';
+  function renderLog(s) {
+    const last = s.log.length ? s.log[s.log.length - 1] : null;
+    const sig = s.log.length + ':' + (last ? JSON.stringify(last) : '');
+    if (sig === logSig) return;
+    const first = logSig === '';
+    logSig = sig;
+    const box = $('#logLines');
+    const atBottom = first || box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    let h = '';
+    for (const e of s.log) {
+      const dot = e.seat >= 0 ? '<i style="background:' + COLORS[e.seat % 8] + '"></i>' : '';
+      if (e.k === 'hand') h += '<div class="lg hand">' + esc(e.t) + '</div>';
+      else if (e.k === 'street') h += '<div class="lg street"><span>' + esc(e.t) + '</span><span class="cards">' + e.cards.map(miniCard).join('') + '</span></div>';
+      else if (e.k === 'act') h += '<div class="lg act a-' + e.a + '">' + dot + '<b>' + esc(e.n) + '</b><span>' + esc(e.t) + '</span></div>';
+      else if (e.k === 'show') h += '<div class="lg show">' + dot + '<b>' + esc(e.n) + '</b><span class="cards">' + e.cards.map(miniCard).join('') + '</span><em>' + esc(e.t) + '</em></div>';
+      else if (e.k === 'win') h += '<div class="lg win">' + esc(e.t) + '</div>';
+      else h += '<div class="lg sys">' + esc(e.t) + '</div>';
+    }
+    box.innerHTML = h;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
   function renderPanels(s) {
-    $('#logLines').innerHTML = s.log.map((l) => '<div>' + esc(l) + '</div>').join('');
+    renderLog(s);
     const hi = handIndex(s.myHand);
     $('#handsList').innerHTML = HAND_ROWS.map((n, i) => '<div class="' + (i === hi ? 'on' : '') + '"><span>' + (i + 1) + '</span>' + n + '</div>').join('');
   }
@@ -595,7 +554,11 @@
       case 'flop': sfx.flop(3); break;
       case 'turn': if (m.seat === undefined) sfx.flop(1); else if (m.seat === state.you) sfx.ding(); break;
       case 'river': sfx.flop(1); break;
-      case 'chips': sfx.chips(m.amount >= state.settings.bb * 10 ? 6 : 3); break;
+      case 'chips': {
+        const r = m.amount / state.settings.bb; // how big the bet is, in big blinds
+        sfx.chips(2 + Math.min(6, Math.floor(r / 3)), r >= 15);
+        break;
+      }
       case 'check': sfx.check(); break;
       case 'fold': sfx.fold(); break;
       case 'win': sfx.win(m.seats.indexOf(state.you) >= 0); break;
@@ -638,7 +601,7 @@
     else if (t.dataset.step) {
       const bb = state ? state.settings.bb : 20;
       updateRaise(raiseTo + (+t.dataset.step) * bb);
-    } else if (t.dataset.start) { sfx.get(); send({ t: 'start' }); }
+    } else if (t.dataset.start) { sfx.unlock(); send({ t: 'start' }); }
     else if (t.dataset.add) send({ t: 'addBot' });
     else if (t.dataset.rm) send({ t: 'removeSeat', seat: +t.dataset.rm });
     else if (t.dataset.rebuy) send({ t: 'rebuy' });
@@ -649,7 +612,13 @@
 
   $('#roomPill').onclick = invite;
   $('#inviteBtn').onclick = invite;
-  $('#soundBtn').onclick = () => sfx.toggle();
+  $('#soundBtn').onclick = () => { sfx.toggleSfx(); renderSoundBtn(); };
+  $('#musicBtn').onclick = () => { sfx.toggleMusic(); renderSoundBtn(); };
+  $('#logBtn').onclick = () => { $('#logPanel').classList.toggle('open'); };
+  $('#logClose').onclick = () => { $('#logPanel').classList.remove('open'); };
+  // browsers only allow sound after a tap or key press
+  document.addEventListener('pointerdown', () => sfx.unlock());
+  document.addEventListener('keydown', () => sfx.unlock());
   $('#handsBtn').onclick = () => { const p = $('#handsPanel'); p.hidden = !p.hidden; };
   $('#handsClose').onclick = () => { $('#handsPanel').hidden = true; };
   $('#leaveBtn').onclick = () => {
@@ -660,8 +629,17 @@
   };
   window.addEventListener('resize', () => { if (state) renderTable(state); });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && inGame && ws && ws.readyState !== 1) connect();
+    if (document.hidden) sfx.suspend();
+    else { sfx.resume(); if (inGame && ws && ws.readyState !== 1) connect(); }
   });
+
+  // soft countdown ticks for the last 5 seconds of your turn
+  let lastTick = -1;
+  setInterval(() => {
+    if (!state || state.toAct !== state.you || state.timeLeftMs == null) { lastTick = -1; return; }
+    const left = Math.ceil((state.timeLeftMs - (performance.now() - stateAt)) / 1000);
+    if (left <= 5 && left >= 1 && left !== lastTick) { lastTick = left; sfx.tick(left <= 2); }
+  }, 250);
 
   // ---------------------------------------------------------------- boot
   buildLegend();
