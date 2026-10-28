@@ -45,6 +45,13 @@ Needs Node 18 or newer.
 - `public/` is the game screen: lobby, table, chip drawing and sounds.
 - Closing the tab and coming back (same browser) puts you back in your seat. If you miss two turns in a row you are sat out until you press **I'm back**. A busted player can **Rebuy**.
 
+## Action log, bot speed and sound
+
+- **Action log:** a panel on the right lists every move in order: blinds, folds, calls, raises, each new street with its cards, every hand shown at showdown, and the winner. On a phone, open it with the speech-bubble button in the top bar.
+- **Bot speed:** chosen when you create the room. Relaxed (2–4 s per move, the default), Normal, or Quick. The numbers live in `BOT_DELAY` in `server.js`.
+- **Sound effects:** clay-chip clacks with different patterns and pitches each time, a riffle shuffle when a hand starts, card flicks, a knock for check, a card slide for fold, and a soft tick for the last 5 seconds of your turn.
+- **Music:** a lounge soundtrack made live in the browser. Chords, key, melody and rhythm keep changing, so it does not loop. Music and effects have separate buttons in the top bar. Browsers only allow sound after a tap, so it starts at your first click.
+
 ## Settings
 
 Chips and blinds are picked when creating a room. The turn timer is 30 seconds. To change defaults, edit `public/index.html` (the preset buttons) and `server.js` (`actionTime`).

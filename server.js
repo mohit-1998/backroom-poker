@@ -9,7 +9,9 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const MAX_ROOMS = 200;
 const ROOM_IDLE_MS = 10 * 60 * 1000;
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// how long bots "think" before acting, in milliseconds [min, max]
+const BOT_DELAY = { relaxed: [2200, 4200], normal: [1300, 2600], quick: [600, 1400] };
+const CODE_CHARS ='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -178,6 +180,7 @@ function handle(ws, m) {
         startChips: num(m.startChips, bb * 20, 1000000, 2000),
         bb, sb: Math.max(1, Math.floor(bb / 2)),
         actionTime: num(m.actionTime, 10, 120, 30),
+        botDelay: BOT_DELAY[m.botSpeed] || BOT_DELAY.relaxed,
         speed: process.env.POKER_SPEED ? Number(process.env.POKER_SPEED) : 1 // tests only
       };
       const room = new Room(code, settings);
